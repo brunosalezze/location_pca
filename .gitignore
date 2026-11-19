@@ -1,0 +1,20 @@
+# Build products
+/build/
+/bin/
+*.o
+*.d
+
+# Python cache of the scripts
+__pycache__/
+*.pyc
+
+# Experiment outputs
+/results/
+/solutions/
+gurobi.log
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store

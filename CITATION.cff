@@ -1,0 +1,44 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the article below."
+title: "location_pca: Progressive Covering Algorithm for the Traffic Counting Location Problem"
+version: 1.0.0
+license: GPL-3.0-or-later
+authors:
+  - family-names: Vieira
+    given-names: Bruno S.
+  - family-names: Ferrari
+    given-names: Thayse
+  - family-names: Ribeiro
+    given-names: Glaydston M.
+  - family-names: Bahiense
+    given-names: Laura
+  - family-names: Orrico Filho
+    given-names: Romulo D.
+  - family-names: Abramides
+    given-names: Carlos Alberto
+  - family-names: Rosa Campos Júnior
+    given-names: Nilo Flavio
+preferred-citation:
+  type: article
+  title: "A progressive hybrid set covering based algorithm for the traffic counting location problem"
+  journal: "Expert Systems with Applications"
+  authors:
+    - family-names: Vieira
+      given-names: Bruno S.
+    - family-names: Ferrari
+      given-names: Thayse
+    - family-names: Ribeiro
+      given-names: Glaydston M.
+    - family-names: Bahiense
+      given-names: Laura
+    - family-names: Orrico Filho
+      given-names: Romulo D.
+    - family-names: Abramides
+      given-names: Carlos Alberto
+    - family-names: Rosa Campos Júnior
+      given-names: Nilo Flavio
+  volume: 160
+  start: 113641
+  year: 2020
+  month: 12
+  doi: 10.1016/j.eswa.2020.113641

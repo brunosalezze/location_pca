@@ -1,0 +1,24 @@
+# Builds and runs the unit tests on every push and pull request.
+# The unit tests use a brute-force stand-in for the MIP solver, so neither
+# Gurobi nor a license is needed here. The Gurobi-based program and the
+# regression test (`make check`) must be run locally.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc-13, gcc-14, clang-18]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compiler version
+        run: ${{ matrix.compiler }} --version
+      - name: Unit tests (with AddressSanitizer and UBSan, warnings as errors)
+        run: make test CC=${{ matrix.compiler }} CFLAGS=-Werror
