@@ -64,14 +64,16 @@ GUROBI_LIB_FILE := $(firstword $(filter-out %_light.so %_light.dylib, \
 GUROBI_LIB ?= $(patsubst lib%,%,$(basename $(notdir $(GUROBI_LIB_FILE))))
 
 GUROBI_CPPFLAGS := -isystem $(GUROBI_HOME)/include
+
+# Building without Gurobi: exact_stub.c replaces the MIP interface and the
+# planar algorithm keeps working; the MIP-based methods stop at run time.
+# Must be decided before the link flags below, or a bare '-l' leaks in.
+NO_GUROBI ?= $(if $(and $(GUROBI_HOME),$(GUROBI_LIB)),,1)
+
 ifeq ($(NO_GUROBI),)
 GUROBI_LDFLAGS  := -L$(GUROBI_HOME)/lib -Wl,-rpath,$(GUROBI_HOME)/lib
 GUROBI_LDLIBS   := -l$(GUROBI_LIB)
 endif
-
-# Building without Gurobi: exact_stub.c replaces the MIP interface and the
-# planar algorithm keeps working; the MIP-based methods stop at run time.
-NO_GUROBI ?= $(if $(and $(GUROBI_HOME),$(GUROBI_LIB)),,1)
 
 # ---------------------------------------------------------------------------
 # Sources
