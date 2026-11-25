@@ -30,6 +30,7 @@ article (plus the whole country), tests and scripts to reproduce the experiments
 - [Usage](#usage)
 - [Reproducing the article's experiments](#reproducing-the-articles-experiments)
 - [How the code is organized](#how-the-code-is-organized)
+- [Alternative solver: planar-cut](#alternative-solver-planar-cut)
 - [Testing](#testing)
 - [Changes with respect to the original code](#changes-with-respect-to-the-original-code)
 - [Citing](#citing)
@@ -256,6 +257,27 @@ PCA repeats this loop for α = α₀, 2α₀, …, 1 and keeps the cheapest feas
 
 Every function is documented in its header (inputs, inner workings, output).
 Start with `algorithms.c`, which reads like the pseudo-code of the article.
+
+## Alternative solver: `planar-cut`
+
+The `planar-cut/` directory contains a second, independent solver for the
+special case in which the road network is **planar**. It computes a certified
+minimum cut — the fewest roads that separate every O-D pair — with an exact
+primal dynamic program, falling back to the Klein–Marx planar multiway-cut
+algorithm (ICALP 2012). It needs no Gurobi and no license.
+
+```sh
+make planar-cut                              # builds planar-cut/planar-cut
+planar-cut/planar-cut --tclp instances/AP    # prints the 22 cut edges
+```
+
+The solver checks planarity first and refuses nonplanar networks (Brasil,
+MG, PR, RJ and SP) instead of approximating them. Over the bundled instances
+it matches the Gurobi-certified optimum on 18 of the 21 planar networks and
+is typically one to three orders of magnitude faster (RS: 24 s versus 79
+min). See [`planar-cut/README.md`](planar-cut/README.md) for the full
+comparison table, the DP budget options, and the verification script
+`planar-cut/tests/test_location.py`.
 
 ## Testing
 

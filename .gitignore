@@ -4,6 +4,10 @@
 *.o
 *.d
 
+# planar-cut build products
+/planar-cut/planar-cut
+/planar-cut/embed-test
+
 # Python cache of the scripts
 __pycache__/
 *.pyc

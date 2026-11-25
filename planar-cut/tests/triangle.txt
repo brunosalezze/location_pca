@@ -1,0 +1,11 @@
+# vertices edges terminals
+3 3 3
+0 1 2
+# edge list: u v cost
+0 1 4
+1 2 2
+2 0 3
+# cyclic outgoing darts at each vertex
+2 1 -3
+2 2 -1
+2 3 -2

@@ -7,6 +7,7 @@
 #   make debug           -O0 + sanitizers build       -> bin/location_pca-debug
 #   make test            unit tests (Gurobi NOT needed)
 #   make check           unit tests + regression test on small instances (needs Gurobi)
+#   make planar-cut      build the planar-only exact solver -> planar-cut/planar-cut
 #   make clean           remove build products
 #
 # Variables you may override on the command line, e.g. `make GUROBI_HOME=/opt/gurobi1100/linux64`:
@@ -84,7 +85,7 @@ test_objects    = $(patsubst %.c,$(BUILD_DIR)/test/%.o,$(TEST_SOURCES))
 # Targets
 # ---------------------------------------------------------------------------
 
-.PHONY: all debug test check clean format help gurobi-check
+.PHONY: all debug test check planar-cut planar-cut-test clean format help gurobi-check
 
 all: $(BIN_DIR)/$(PROGRAM)
 
@@ -95,6 +96,13 @@ test: $(BUILD_DIR)/test/unit_tests
 
 check: test $(BIN_DIR)/$(PROGRAM)
 	$(TEST_DIR)/regression.sh $(BIN_DIR)/$(PROGRAM)
+
+# The planar-only exact solver is a self-contained subproject without Gurobi.
+planar-cut:
+	$(MAKE) -C planar-cut
+
+planar-cut-test:
+	$(MAKE) -C planar-cut test
 
 gurobi-check:
 	@if [ ! -f "$(GUROBI_HOME)/include/gurobi_c.h" ] || [ -z "$(GUROBI_LIB)" ]; then \
@@ -145,6 +153,8 @@ help:
 	@echo "  debug          build $(BIN_DIR)/$(PROGRAM)-debug with AddressSanitizer/UBSan"
 	@echo "  test           build and run the unit tests (no Gurobi required)"
 	@echo "  check          'test' plus a regression run on small instances (requires Gurobi)"
+	@echo "  planar-cut     build the planar-only exact solver in planar-cut/ (no Gurobi)"
+	@echo "  planar-cut-test  build and run the planar-cut tests"
 	@echo "  format         apply .clang-format to all sources"
 	@echo "  clean          remove $(BUILD_DIR)/ and $(BIN_DIR)/"
 	@echo ""
