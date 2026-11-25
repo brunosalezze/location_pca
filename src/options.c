@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 
 /** Exit status for command-line errors (as used by most Unix tools). */
@@ -34,6 +35,8 @@ enum {
     OPT_NO_HEADER,
     OPT_KEEP_DEGREE_TWO,
     OPT_INFO,
+    OPT_PLANARITY_ONLY,
+    OPT_KLEIN_MARX_ONLY,
 };
 
 /**
@@ -56,7 +59,7 @@ static void print_usage(FILE *stream, const char *program)
         "Results are printed to stdout as tab-separated values, logs go to stderr.\n"
         "\n"
         "Method:\n"
-        "  -a, --algorithm NAME        pca (default), exact or greedy\n"
+        "  -a, --algorithm NAME        pca (default), exact, greedy or planar\n"
         "      --alpha0 X              PCA initial hybrid fraction, 0 < X <= 1 (default 0.0625)\n"
         "      --spread NAME           Cut phase spread criterion: mlc (default) or random\n"
         "      --cleaning NAME         exact (default), greedy, random or none\n"
@@ -65,6 +68,8 @@ static void print_usage(FILE *stream, const char *program)
         "      --paths N               paths per O-D node in later Cut phases\n"
         "                              (0 = all; default: pca 5, exact 10, greedy 500)\n"
         "      --keep-degree2          do not contract degree-2 intersections\n"
+        "      --planarity-only        only test and report planarity (with -a planar)\n"
+        "      --klein-marx-only       disable the primal DP fast path (with -a planar)\n"
         "\n"
         "Limits:\n"
         "  -t, --time-limit S          total wall-clock limit of a run (default 7200)\n"
@@ -234,7 +239,7 @@ static char *name_from_path(const char *path, bool strip_ext)
 
 void options_parse(int argc, char **argv, Options *options)
 {
-    static const char *const algorithm_names[] = {"pca", "exact", "greedy", nullptr};
+    static const char *const algorithm_names[] = {"pca", "exact", "greedy", "planar", nullptr};
     static const char *const spread_names[] = {"mlc", "random", nullptr};
     static const char *const cleaning_names[] = {"none", "random", "greedy", "exact", nullptr};
     static const struct option long_options[] = {
@@ -245,6 +250,8 @@ void options_parse(int argc, char **argv, Options *options)
         {"initial-paths", required_argument, nullptr, OPT_INITIAL_PATHS},
         {"paths", required_argument, nullptr, OPT_PATHS},
         {"keep-degree2", no_argument, nullptr, OPT_KEEP_DEGREE_TWO},
+        {"planarity-only", no_argument, nullptr, OPT_PLANARITY_ONLY},
+        {"klein-marx-only", no_argument, nullptr, OPT_KLEIN_MARX_ONLY},
         {"time-limit", required_argument, nullptr, 't'},
         {"iteration-time-limit", required_argument, nullptr, OPT_ITERATION_TIME_LIMIT},
         {"cleaning-time-limit", required_argument, nullptr, OPT_CLEANING_TIME_LIMIT},
@@ -309,6 +316,12 @@ void options_parse(int argc, char **argv, Options *options)
         case OPT_KEEP_DEGREE_TWO:
             options->contract_degree_two = false;
             break;
+        case OPT_PLANARITY_ONLY:
+            options->planarity_only = true;
+            break;
+        case OPT_KLEIN_MARX_ONLY:
+            options->planar_paper_only = true;
+            break;
         case 't':
             time_limit = parse_number(program, "--time-limit", optarg, 0.0, 1e9);
             break;
@@ -360,9 +373,20 @@ void options_parse(int argc, char **argv, Options *options)
         }
     }
 
-    /* Positional arguments: INSTANCE_DIR, or EDGES_FILE OD_FILE. */
+    /* Positional arguments: INSTANCE_DIR, or EDGES_FILE OD_FILE. A single
+       positional that is "-" or a regular file is a weighted graph with a
+       rotation system, input only for the planar algorithm. */
+    struct stat info;
     int positional = argc - optind;
-    if (positional == 1) {
+    if (positional == 1 &&
+        (strcmp(argv[optind], "-") == 0 ||
+         (stat(argv[optind], &info) == 0 && S_ISREG(info.st_mode)))) {
+        if (algorithm != ALGORITHM_PLANAR) {
+            usage_error(program, "a weighted graph file is only input for -a planar", argv[optind]);
+        }
+        options->edges_path = xstrdup(argv[optind]);
+        options->instance_name = name_from_path(argv[optind], true);
+    } else if (positional == 1) {
         options->edges_path = join_path(argv[optind], "edges.txt");
         options->od_path = join_path(argv[optind], "od_nodes.txt");
         options->instance_name = name_from_path(argv[optind], false);
@@ -408,6 +432,12 @@ void options_parse(int argc, char **argv, Options *options)
 
     if (!seed_given) {
         options->seed = (uint64_t)time(nullptr);
+    }
+    if (options->info_only && algorithm == ALGORITHM_PLANAR) {
+        usage_error(program, "--info is not available with -a planar", nullptr);
+    }
+    if ((options->planarity_only || options->planar_paper_only) && algorithm != ALGORITHM_PLANAR) {
+        usage_error(program, "--planarity-only and --klein-marx-only need -a planar", nullptr);
     }
     options->verbosity = (LogLevel)(verbosity > LOG_TRACE ? LOG_TRACE : verbosity);
 }

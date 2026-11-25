@@ -30,7 +30,7 @@ article (plus the whole country), tests and scripts to reproduce the experiments
 - [Usage](#usage)
 - [Reproducing the article's experiments](#reproducing-the-articles-experiments)
 - [How the code is organized](#how-the-code-is-organized)
-- [Alternative solver: planar-cut](#alternative-solver-planar-cut)
+- [Exact solver for planar networks: -a planar](#exact-solver-for-planar-networks--a-planar)
 - [Testing](#testing)
 - [Changes with respect to the original code](#changes-with-respect-to-the-original-code)
 - [Citing](#citing)
@@ -47,7 +47,7 @@ article (plus the whole country), tests and scripts to reproduce the experiments
 | Linux or macOS | Any POSIX system should work; on Windows use WSL. |
 | C compiler with **C23** support | GCC ≥ 13 or Clang ≥ 18. Tested with GCC 14.2, Clang 18.1 and Clang 23.1. |
 | GNU Make | Any recent version. |
-| **Gurobi** ≥ 9.0 and a license | Tested with Gurobi 13.0.3. Free licenses are available for academic use at <https://www.gurobi.com/academia/>. |
+| **Gurobi** ≥ 9.0 and a license | Tested with Gurobi 13.0.3. Free licenses are available for academic use at <https://www.gurobi.com/academia/>. Needed only by the MIP-based methods; `-a planar` works without Gurobi (`make NO_GUROBI=1`). |
 | Python 3 (optional) | Only for `scripts/summarize_results.py` (standard library only). |
 
 Check the compiler with `gcc --version`. On Ubuntu 22.04 (GCC 11), install a
@@ -74,16 +74,20 @@ make            # builds bin/location_pca
 The Makefile finds Gurobi through `$GUROBI_HOME`, or else picks the newest
 `/opt/gurobi*/linux64` (Linux) or `/Library/gurobi*/macos_universal2` (macOS).
 It also detects the library name (`gurobi130`, `gurobi110`, ...) automatically.
-Run `make help` to see what was detected.
+Run `make help` to see what was detected. Without Gurobi, `make NO_GUROBI=1`
+builds a program in which the planar algorithm (`-a planar`) and the greedy
+framework with `--cleaning none` work normally; the MIP-based methods stop
+with an explanatory message.
 
 | Command | Result |
 |---|---|
 | `make` | Optimized build, `bin/location_pca`. |
 | `make NATIVE=1` | Same, tuned for this CPU (`-march=native`). |
 | `make GUROBI_HOME=/path/to/gurobiXXXX/linux64` | Use a specific Gurobi installation. |
+| `make NO_GUROBI=1` | Build without Gurobi: `-a planar` works, the MIP methods do not. |
 | `make debug` | `bin/location_pca-debug` with AddressSanitizer and UBSan. |
-| `make test` | Unit tests (**no Gurobi needed**). |
-| `make check` | Unit tests plus a regression run on 11 small instances (needs Gurobi). |
+| `make test` | Unit tests and planar-algorithm tests (**no Gurobi needed**). |
+| `make check` | Adds the Gurobi-certified instance comparison (needs Gurobi). |
 | `make clean` | Removes `build/` and `bin/`. |
 
 The executable records Gurobi's library path (rpath), so it runs without
@@ -154,13 +158,15 @@ location_pca [OPTIONS] EDGES_FILE OD_FILE
 
 | Option | Default | Meaning |
 |---|---|---|
-| `-a, --algorithm NAME` | `pca` | `pca` (Algorithm 4), `exact` (framework with exact covering) or `greedy` (framework with greedy covering). |
+| `-a, --algorithm NAME` | `pca` | `pca` (Algorithm 4), `exact` (framework with exact covering), `greedy` (framework with greedy covering) or `planar` (exact solver for planar networks; calls no MIP solver, see [below](#exact-solver-for-planar-networks--a-planar)). |
 | `--alpha0 X` | `0.0625` | PCA: initial hybrid fraction α₀ ∈ (0, 1]. `--alpha0 1` gives the pure exact setting that proves optimality. |
 | `--spread NAME` | `mlc` | Cut phase spread criterion: `mlc` (Minimum Link Count) or `random` (ND). |
 | `--cleaning NAME` | `exact` | Cleaning procedure: `exact` (EC), `greedy` (GC), `random` (RC) or `none`. |
 | `--initial-paths N` | per method | Paths per O-D node in the first Cut phase (0 = all). PCA: 0, exact: 20, greedy: 500. |
 | `--paths N` | per method | Paths per O-D node in later Cut phases. PCA: 5, exact: 10, greedy: 500. |
 | `--keep-degree2` | off | Do not merge the two links of degree-2 intersections. |
+| `--planarity-only` | – | `-a planar`: test and report planarity, then exit (`planar yes`, `planar no` or `planar unknown`). |
+| `--klein-marx-only` | – | `-a planar`: disable the primal DP fast path and use only the Klein–Marx enumeration. |
 | `-t, --time-limit S` | `7200` | Total wall-clock limit of one run (TL₂). |
 | `--iteration-time-limit S` | `500` | Limit of each exact covering solve (TL₁). |
 | `--cleaning-time-limit S` | `25` | Limit of each exact cleaning solve. |
@@ -187,6 +193,8 @@ location_pca [OPTIONS] EDGES_FILE OD_FILE
 
 The exit status is 0 on success, 1 on errors (or if a run ended
 infeasible, which should never happen), and 2 for invalid command-line arguments.
+`-a planar` prints the same table with `lower_bound` equal to `cost` (a
+proven optimum), and writes the chosen edges only through `--solution-dir`.
 
 **Note on very large networks.** The first Cut phase of `instances/Brasil`
 (5 235 O-D nodes, 13.7 million O-D pairs) finds 135 003 paths, and a short
@@ -218,11 +226,14 @@ location_pca/
 │   ├── greedy.[ch]       greedy covering (Algorithm 2, first half of Algorithm 3)
 │   ├── exact.h           exact covering interface (solver-independent)
 │   ├── exact_gurobi.c    exact covering with Gurobi
+│   ├── exact_stub.c      stand-in for exact.h in 'make NO_GUROBI=1' builds
 │   ├── cleaning.[ch]     cleaning procedures RC / GC / EC
 │   ├── algorithms.[ch]   set covering framework (Algorithm 1) and PCA (Algorithm 4)
+│   ├── planar/           exact solver for planar networks (-a planar; no MIP solver)
 │   ├── report.[ch]       result table and solution files
 │   └── rng.[ch], timer.[ch], util.[ch]   random numbers, clock, allocation/logging
 ├── instances/            the 27 networks (see instances/README.md)
+├── tests/                unit tests and planar-algorithm tests (tests/planar/README.md)
 └── scripts/              batch experiments and result summaries
 ```
 
@@ -258,26 +269,36 @@ PCA repeats this loop for α = α₀, 2α₀, …, 1 and keeps the cheapest feas
 Every function is documented in its header (inputs, inner workings, output).
 Start with `algorithms.c`, which reads like the pseudo-code of the article.
 
-## Alternative solver: `planar-cut`
+## Exact solver for planar networks: `-a planar`
 
-The `planar-cut/` directory contains a second, independent solver for the
-special case in which the road network is **planar**. It computes a certified
-minimum cut — the fewest roads that separate every O-D pair — with an exact
-primal dynamic program, falling back to the Klein–Marx planar multiway-cut
-algorithm (ICALP 2012). It needs no Gurobi and no license.
+The program also embeds a second, independent algorithm for the special case
+in which the road network is **planar**: an exact primal dynamic program with
+isolating-cut reductions, falling back to the Klein–Marx planar multiway-cut
+algorithm (ICALP 2012). It is always compiled in and **does not need Gurobi**:
+it never calls a MIP solver, and on a machine without Gurobi
+`make NO_GUROBI=1` produces a binary in which `-a planar` (and
+`-a greedy --cleaning none`) work fully.
 
 ```sh
-make planar-cut                              # builds planar-cut/planar-cut
-planar-cut/planar-cut --tclp instances/AP    # prints the 22 cut edges
+bin/location_pca -a planar instances/AP                 # TSV row + cut via -o; verdict on stderr
+bin/location_pca -a planar -o sol instances/AP          # also writes the cut edges to sol/
+bin/location_pca -a planar --planarity-only instances/RJ   # just the verdict (stderr)
 ```
 
-The solver checks planarity first and refuses nonplanar networks (Brasil,
-MG, PR, RJ and SP) instead of approximating them. Over the bundled instances
-it matches the Gurobi-certified optimum on 18 of the 21 planar networks and
-is typically one to three orders of magnitude faster (RS: 24 s versus 79
-min). See [`planar-cut/README.md`](planar-cut/README.md) for the full
-comparison table, the DP budget options, and the verification script
-`planar-cut/tests/test_location.py`.
+`-a planar` reads the untouched instance (parallel roads included, no
+degree-2 contraction) and proves the network planar first — or refuses with
+`planar no` instead of guessing, like Brasil, MG, PR, RJ and SP here. The
+planarity verdict is logged to stderr, so stdout keeps the usual TSV
+contract: the planar row carries `cost` with `lower_bound = cost` and
+`gap_pct = 0`, i.e. a certified optimum, and `--solution-dir` writes the cut
+with the original edge identifiers exactly like the other algorithms. On the
+bundled instances it matches the Gurobi-certified optimum on 18 of the 21
+planar networks and is typically one to three orders of magnitude faster (RS:
+24 s versus 79 min). Its budget is set with the environment variables
+`CUT_DP_MIB`, `CUT_DP_WORK` and `CUT_DP_STATS`. See
+[`tests/planar/README.md`](tests/planar/README.md) for the full comparison
+table and the verification scripts `tests/planar/test_oracle.py` and
+`tests/planar/test_location.py`.
 
 ## Testing
 
@@ -286,8 +307,16 @@ comparison table, the DP budget options, and the verification script
   so no license is needed (they also run in CI). Besides module tests, they solve
   150 random networks with every method and compare the result with an
   exhaustive search. They also check that preprocessing never changes the optimum.
-- `make check` also runs `tests/regression.sh`, which solves 11 instances 3 times
-  each and compares the result with the optimum proven in the article.
+- `make test` also builds and runs the tests of the planar algorithm (they need
+  no Gurobi): `tests/planar/embed_test.c` for the rotation-system embedder and
+  `tests/planar/test_oracle.py`, which compares `-a planar` against exhaustive
+  search on fixed and 100 seeded random planar graphs (weighted graph format,
+  passed on stdin), once with the primal DP and once with `--klein-marx-only`.
+- `make check` additionally runs `tests/planar/test_location.py`, which
+  verifies `-a planar` against the Gurobi-certified optimum on the bundled
+  instances (all original terminals, parallel roads preserved by subdivision
+  in the reference input), and `tests/regression.sh` if present. It needs
+  Gurobi, unless the build is `NO_GUROBI=1`, in which case it is skipped.
 
 ## Citing
 

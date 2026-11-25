@@ -53,6 +53,7 @@ void *mem(size_t n, size_t s);
 Cost plus(Cost a, Cost b);
 Cost mincut(const Plane *g, int s, int t, bool *cut);
 void mincut_max_side(const Plane *g, int s, int t, bool *side);
+void steiner(const Plane *dual, int old_m, const int *rep, int k, bool *tree);
 Plane plane(int n, int m);
 void plane_free(Plane *g);
 int *faces(const Plane *g, int *nf);

@@ -1,7 +1,9 @@
-# Builds and runs the unit tests on every push and pull request.
-# The unit tests use a brute-force stand-in for the MIP solver, so neither
-# Gurobi nor a license is needed here. The Gurobi-based program and the
-# regression test (`make check`) must be run locally.
+# Builds and runs the tests on every push and pull request. The unit tests use
+# a brute-force stand-in for the MIP solver, and when Gurobi is not installed
+# the Makefile builds the program with it too (NO_GUROBI is detected), so
+# neither Gurobi nor a license is needed here. The planar-algorithm tests run
+# as part of 'make test'. The Gurobi-certified comparison (`make check`) must
+# be run locally.
 name: CI
 
 on:

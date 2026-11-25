@@ -130,6 +130,10 @@ void solver_params_defaults(SolverParams *params, Algorithm algorithm)
         params->initial_paths_per_root = 500;
         params->paths_per_root = 500;
         break;
+    case ALGORITHM_PLANAR:
+        params->initial_paths_per_root = 0; /* unused by the planar solver */
+        params->paths_per_root = 0;
+        break;
     }
 }
 
@@ -142,6 +146,8 @@ const char *algorithm_name(Algorithm algorithm)
         return "exact";
     case ALGORITHM_GREEDY:
         return "greedy";
+    case ALGORITHM_PLANAR:
+        return "planar";
     }
     return "?";
 }
@@ -545,6 +551,9 @@ void run_algorithm(const Graph *graph, const SolverParams *params, ExactSolver *
     case ALGORITHM_GREEDY:
         run_greedy(&run);
         break;
+    case ALGORITHM_PLANAR:
+        /* main.c dispatches the planar algorithm before reaching here. */
+        fatal("the planar algorithm must not reach run_algorithm()");
     }
 
     if (run.best_cost == INT32_MAX) {

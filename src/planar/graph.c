@@ -5,7 +5,7 @@
 
 void die(const char *msg)
 {
-    fprintf(stderr, "planar-cut: %s\n", msg);
+    fprintf(stderr, "location_pca: %s\n", msg);
     exit(EXIT_FAILURE);
 }
 

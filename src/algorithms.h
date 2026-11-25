@@ -11,6 +11,9 @@
  *    Equivalent to PCA with alpha0 = 1.
  *  - ALGORITHM_GREEDY: framework with the greedy covering heuristic
  *    (Algorithm 1 + Algorithm 2), used for the cleaning comparison of Table 2.
+ *  - ALGORITHM_PLANAR: exact solver for planar networks (planar/ entry.c).
+ *    It needs no MIP solver: it proves planarity first and then computes a
+ *    minimum cut with a primal dynamic program or with Klein-Marx.
  */
 #ifndef LOCATION_PCA_ALGORITHMS_H
 #define LOCATION_PCA_ALGORITHMS_H
@@ -27,6 +30,7 @@ typedef enum Algorithm {
     ALGORITHM_PCA,    /**< Progressive Covering Algorithm (Algorithm 4). */
     ALGORITHM_EXACT,  /**< Set Covering Framework with exact covering.   */
     ALGORITHM_GREEDY, /**< Set Covering Framework with greedy covering.  */
+    ALGORITHM_PLANAR, /**< Exact planar solver; never calls a MIP solver. */
 } Algorithm;
 
 /** Parameters of one solution method. Fill with solver_params_defaults(). */

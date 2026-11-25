@@ -25,7 +25,7 @@ static uint64_t setting(const char *name, uint64_t fallback, uint64_t limit)
     errno = 0;
     uintmax_t value = strtoumax(s, &end, 10);
     if (*s < '0' || *s > '9' || *end || errno || !value || value > limit) {
-        fprintf(stderr, "planar-cut: %s must be in 1..%" PRIu64 "\n", name, limit);
+        fprintf(stderr, "location_pca: %s must be in 1..%" PRIu64 "\n", name, limit);
         exit(EXIT_FAILURE);
     }
     return (uint64_t)value;

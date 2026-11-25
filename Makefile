@@ -5,15 +5,15 @@
 # Main targets (run `make help` for the full list):
 #   make                 optimized build              -> bin/location_pca
 #   make debug           -O0 + sanitizers build       -> bin/location_pca-debug
-#   make test            unit tests (Gurobi NOT needed)
-#   make check           unit tests + regression test on small instances (needs Gurobi)
-#   make planar-cut      build the planar-only exact solver -> planar-cut/planar-cut
+#   make test            unit tests + planar tests (Gurobi NOT needed)
+#   make check           'test' + regression runs on instances (needs Gurobi)
 #   make clean           remove build products
 #
 # Variables you may override on the command line, e.g. `make GUROBI_HOME=/opt/gurobi1100/linux64`:
 #   GUROBI_HOME  Gurobi installation directory (default: $GUROBI_HOME, else the newest
 #                /opt/gurobi*/linux64 or /Library/gurobi*/macos_universal2)
 #   GUROBI_LIB   Gurobi library name without 'lib' prefix (default: detected, e.g. gurobi130)
+#   NO_GUROBI=1  build without Gurobi: -a planar works, the MIP-based methods do not
 #   CC           C compiler (GCC >= 13 or Clang >= 18)
 #   NATIVE=1     tune the release build for this machine (-march=native)
 #   SANITIZE=    disable the sanitizers of the debug and test builds
@@ -64,17 +64,28 @@ GUROBI_LIB_FILE := $(firstword $(filter-out %_light.so %_light.dylib, \
 GUROBI_LIB ?= $(patsubst lib%,%,$(basename $(notdir $(GUROBI_LIB_FILE))))
 
 GUROBI_CPPFLAGS := -isystem $(GUROBI_HOME)/include
+ifeq ($(NO_GUROBI),)
 GUROBI_LDFLAGS  := -L$(GUROBI_HOME)/lib -Wl,-rpath,$(GUROBI_HOME)/lib
 GUROBI_LDLIBS   := -l$(GUROBI_LIB)
+endif
+
+# Building without Gurobi: exact_stub.c replaces the MIP interface and the
+# planar algorithm keeps working; the MIP-based methods stop at run time.
+NO_GUROBI ?= $(if $(and $(GUROBI_HOME),$(GUROBI_LIB)),,1)
 
 # ---------------------------------------------------------------------------
 # Sources
 # ---------------------------------------------------------------------------
 
 # Solver-independent core, shared by the program and the unit tests.
-CORE_SOURCES := $(filter-out $(SRC_DIR)/main.c $(SRC_DIR)/exact_gurobi.c, \
-                  $(wildcard $(SRC_DIR)/*.c))
-APP_SOURCES  := $(CORE_SOURCES) $(SRC_DIR)/exact_gurobi.c $(SRC_DIR)/main.c
+# The planar algorithm (src/planar/) is always compiled in: it never calls
+# the MIP solver and needs no Gurobi at run time.
+PLANAR_SOURCES := $(wildcard $(SRC_DIR)/planar/*.c)
+CORE_SOURCES := $(filter-out $(SRC_DIR)/main.c $(SRC_DIR)/exact_gurobi.c $(SRC_DIR)/exact_stub.c, \
+                  $(wildcard $(SRC_DIR)/*.c)) $(PLANAR_SOURCES)
+# Without Gurobi, exact_stub.c replaces exact_gurobi.c and -a planar still works.
+MIP_SOURCES := $(if $(NO_GUROBI),$(SRC_DIR)/exact_stub.c,$(SRC_DIR)/exact_gurobi.c)
+APP_SOURCES  := $(CORE_SOURCES) $(MIP_SOURCES) $(SRC_DIR)/main.c
 TEST_SOURCES := $(CORE_SOURCES) $(TEST_DIR)/unit_tests.c $(TEST_DIR)/exact_bruteforce.c
 
 release_objects = $(patsubst %.c,$(BUILD_DIR)/release/%.o,$(APP_SOURCES))
@@ -85,31 +96,40 @@ test_objects    = $(patsubst %.c,$(BUILD_DIR)/test/%.o,$(TEST_SOURCES))
 # Targets
 # ---------------------------------------------------------------------------
 
-.PHONY: all debug test check planar-cut planar-cut-test clean format help gurobi-check
+.PHONY: all debug test check clean format help gurobi-check
 
 all: $(BIN_DIR)/$(PROGRAM)
 
 debug: $(BIN_DIR)/$(PROGRAM)-debug
 
-test: $(BUILD_DIR)/test/unit_tests
+# The planar algorithm is part of the program; its C tests and the Python
+# oracle (weighted graphs vs. exhaustive search) run with 'make test'.
+test: $(BUILD_DIR)/test/unit_tests $(BUILD_DIR)/test/planar_embed_test $(BIN_DIR)/$(PROGRAM)
 	$(BUILD_DIR)/test/unit_tests
+	$(BUILD_DIR)/test/planar_embed_test
+	python3 $(TEST_DIR)/planar/test_oracle.py $(BIN_DIR)/$(PROGRAM)
+	python3 $(TEST_DIR)/planar/test_oracle.py $(BIN_DIR)/$(PROGRAM) --klein-marx-only
 
-check: test $(BIN_DIR)/$(PROGRAM)
-	$(TEST_DIR)/regression.sh $(BIN_DIR)/$(PROGRAM)
-
-# The planar-only exact solver is a self-contained subproject without Gurobi.
-planar-cut:
-	$(MAKE) -C planar-cut
-
-planar-cut-test:
-	$(MAKE) -C planar-cut test
+check: test
+ifeq ($(NO_GUROBI),)
+	@if [ -f $(TEST_DIR)/regression.sh ]; then $(TEST_DIR)/regression.sh $(BIN_DIR)/$(PROGRAM); \
+	 else echo "check: $(TEST_DIR)/regression.sh is not present; skipping." >&2; fi
+	python3 $(TEST_DIR)/planar/test_location.py
+else
+	@echo "check: skipped the Gurobi regression runs (NO_GUROBI build)." >&2
+endif
 
 gurobi-check:
+ifeq ($(NO_GUROBI),)
 	@if [ ! -f "$(GUROBI_HOME)/include/gurobi_c.h" ] || [ -z "$(GUROBI_LIB)" ]; then \
 	    echo "error: Gurobi not found (GUROBI_HOME='$(GUROBI_HOME)')." >&2; \
-	    echo "       Install Gurobi and run e.g. 'make GUROBI_HOME=/opt/gurobi1300/linux64'." >&2; \
+	    echo "       Install Gurobi and run e.g. 'make GUROBI_HOME=/opt/gurobi1300/linux64'," >&2; \
+	    echo "       or build without it with 'make NO_GUROBI=1' (-a planar only)." >&2; \
 	    exit 1; \
 	fi
+else
+	@echo "note: building without Gurobi; -a planar works, exact/pca stop at run time." >&2
+endif
 
 $(BIN_DIR)/$(PROGRAM): $(release_objects) | gurobi-check
 	@mkdir -p $(@D)
@@ -122,6 +142,16 @@ $(BIN_DIR)/$(PROGRAM)-debug: $(debug_objects) | gurobi-check
 $(BUILD_DIR)/test/unit_tests: $(test_objects)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(TEST_FLAGS) $(LDFLAGS) $^ -o $@ $(LDLIBS)
+
+$(BUILD_DIR)/test/planar_embed_test: $(BUILD_DIR)/test/$(TEST_DIR)/planar/embed_test.o \
+$(BUILD_DIR)/test/$(SRC_DIR)/planar/embed.o $(BUILD_DIR)/test/$(SRC_DIR)/planar/graph.o \
+$(BUILD_DIR)/test/$(SRC_DIR)/planar/steiner.o
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(TEST_FLAGS) $(LDFLAGS) $^ -o $@ $(LDLIBS)
+
+# The planar sources use VLAs bounded by piece sizes on purpose.
+$(BUILD_DIR)/release/$(SRC_DIR)/planar/%.o $(BUILD_DIR)/debug/$(SRC_DIR)/planar/%.o \
+$(BUILD_DIR)/test/$(SRC_DIR)/planar/%.o: WARNINGS := $(filter-out -Wvla,$(WARNINGS))
 
 # Only exact_gurobi.c needs the Gurobi header.
 $(BUILD_DIR)/release/$(SRC_DIR)/exact_gurobi.o \
@@ -151,10 +181,9 @@ help:
 	@echo "Targets:"
 	@echo "  all (default)  build $(BIN_DIR)/$(PROGRAM) (optimized; NATIVE=1 adds -march=native)"
 	@echo "  debug          build $(BIN_DIR)/$(PROGRAM)-debug with AddressSanitizer/UBSan"
-	@echo "  test           build and run the unit tests (no Gurobi required)"
-	@echo "  check          'test' plus a regression run on small instances (requires Gurobi)"
-	@echo "  planar-cut     build the planar-only exact solver in planar-cut/ (no Gurobi)"
-	@echo "  planar-cut-test  build and run the planar-cut tests"
+	@echo "  test           build and run the unit tests and the planar-algorithm tests"
+	@echo "                 (no Gurobi required)"
+	@echo "  check          'test' plus regression runs on instances (requires Gurobi)"
 	@echo "  format         apply .clang-format to all sources"
 	@echo "  clean          remove $(BUILD_DIR)/ and $(BIN_DIR)/"
 	@echo ""

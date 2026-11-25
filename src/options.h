@@ -29,6 +29,8 @@ typedef struct Options {
     bool print_header;        /**< Print the TSV header line. */
     bool info_only;           /**< Only print instance statistics. */
     bool contract_degree_two; /**< Preprocessing step 3 (see graph_load()). */
+    bool planarity_only;      /**< With -a planar: only test planarity. */
+    bool planar_paper_only;   /**< With -a planar: only the Klein-Marx method. */
     LogLevel verbosity;       /**< Logging level. */
 } Options;
 

@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 BIN = sys.argv[1]
-FLAGS = sys.argv[2:]
+FLAGS = ["-a", "planar", *sys.argv[2:]]
 
 
 def instance(n, edges, terminals, rotations):
@@ -52,7 +52,7 @@ def oracle(n, edges, terminals):
 
 
 def run(text):
-    p = subprocess.run([BIN, *FLAGS], input=text, capture_output=True, text=True, timeout=30)
+    p = subprocess.run([BIN, *FLAGS, "-"], input=text, capture_output=True, text=True, timeout=30)
     assert p.returncode == 0, (p.stderr, text)
     header, size, *ids = p.stdout.splitlines()
     cut = list(map(int, ids))
@@ -146,7 +146,7 @@ def rejects():
          "not planar"),
     ]
     for text, msg in bad:
-        p = subprocess.run([BIN, *FLAGS], input=text, capture_output=True, text=True, timeout=5)
+        p = subprocess.run([BIN, *FLAGS, "-"], input=text, capture_output=True, text=True, timeout=5)
         assert p.returncode != 0 and msg in p.stderr, (p.stderr, text)
 
 

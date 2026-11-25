@@ -75,7 +75,9 @@ static void evaluate(Enum *e)
         }
     }
     TICK(7);
-    #pragma omp critical (multicut_best)
+#ifdef _OPENMP
+    _Pragma("omp critical (multicut_best)")
+#endif
     {
         Cost ub = INF;
         for (Mask x = e->isolated; x; x = (x-1)&e->isolated)
@@ -156,7 +158,9 @@ static void valid(Enum *e, int groups)
     if (!iso) return;
     e->isolated = iso;
     e->limit = 0;
-    #pragma omp critical (multicut_best)
+#ifdef _OPENMP
+    _Pragma("omp critical (multicut_best)")
+#endif
     {
         for (Mask x = iso; x; x = (x-1)&iso)
             if (e->best[x].cost > e->limit) e->limit = e->best[x].cost;
@@ -330,7 +334,9 @@ void enumerate(const Open *h, Answer *best, const Cost *other, Cost lb)
     atomic_bool stop = false;
     (void)profiling();
     profile_init();
-    #pragma omp parallel for schedule(dynamic)
+#ifdef _OPENMP
+    _Pragma("omp parallel for schedule(dynamic)")
+#endif
     for (int tk = 0; tk < total; ++tk) {
         if (stop) continue;
         Enum e = {

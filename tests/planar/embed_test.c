@@ -1,7 +1,7 @@
 /* SPDX-FileCopyrightText: 2026 The location_pca authors (see AUTHORS)
  * SPDX-License-Identifier: GPL-3.0-or-later */
 /* Development harness: builds small graphs and checks embed(). */
-#include "../cut.h"
+#include "../src/planar/cut.h"
 
 int g_crossings = 32;
 static int failures;

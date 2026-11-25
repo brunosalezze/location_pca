@@ -15,6 +15,7 @@
 #include "exact.h"
 #include "graph.h"
 #include "options.h"
+#include "planar/entry.h"
 #include "report.h"
 #include "util.h"
 
@@ -44,6 +45,14 @@ int main(int argc, char **argv)
     Options options;
     options_parse(argc, argv, &options);
     log_set_level(options.verbosity);
+
+    if (options.params.algorithm == ALGORITHM_PLANAR) {
+        /* The planar algorithm works on the untouched input and never calls
+           the MIP solver; see planar/entry.c. */
+        int status = planar_run_all(&options);
+        options_free(&options);
+        return status;
+    }
 
     Graph *graph = graph_load(options.edges_path, options.od_path, options.contract_degree_two);
     if (options.info_only) {

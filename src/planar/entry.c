@@ -1,10 +1,29 @@
 /* SPDX-FileCopyrightText: 2026 The location_pca authors (see AUTHORS)
  * SPDX-License-Identifier: GPL-3.0-or-later */
+/**
+ * @file entry.c
+ * @brief The planar algorithm: planarity check, primal dynamic program and
+ *        Klein-Marx fallback, driven by the parsed command line.
+ *
+ * planar_run_all() replaces the old standalone planar-cut main(). The
+ * traffic-counting mode reads edges.txt and od_nodes.txt, tests planarity
+ * first (the verdict goes to stderr), reports one TSV row per run on stdout
+ * and writes the cut through --solution-dir. Without od_nodes.txt the input
+ * is a weighted graph with a rotation system (stdin with "-", see
+ * tests/planar/README.md), solved in the human-readable test format.
+ */
+#include "entry.h"
+
 #include "cut.h"
+#include "../report.h"
+#include "../timer.h"
+#include "../util.h"
+
 #include <ctype.h>
 #include <errno.h>
 #include <inttypes.h>
 #include <limits.h>
+#include <sys/stat.h>
 
 int g_crossings = 32;
 
@@ -159,7 +178,7 @@ static Answer components(const Plane *g, const int *term, int k, bool paper_only
         Answer result;
         if (paper_only || nr == 2 || !solve_narrow(&h, reps, nr, &result)) {
             if (nr > MAX_TERMINALS) {
-                fprintf(stderr, "planar-cut: %d terminals exceed the limit of %d for Klein–Marx%s\n",
+                fprintf(stderr, "location_pca: %d terminals exceed the limit of %d for Klein–Marx%s\n",
                         nr, MAX_TERMINALS, paper_only ? "" : " (primal DP exceeded its budget)");
                 exit(EXIT_FAILURE);
             }
@@ -201,104 +220,95 @@ static void verify(const Plane *g, const int *term, int k, const Answer *a)
     free(p);
 }
 
-int main(int argc, char **argv)
+/* Writes the chosen stations in the solution file format of report.c. */
+static void write_solution(const Options *options, uint64_t seed, const Inst *ins,
+                           const Answer *a)
 {
-    const char *path = NULL, *dir = NULL, *edges = NULL, *ods = NULL;
-    bool only_planarity = false, paper_only = false;
-    for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--help") == 0) {
-            puts("usage: planar-cut [--klein-marx-only] [--crossings N] [FILE|-]\n"
-                 "       planar-cut --tclp DIR | --edges EDGES --od OD_NODES\n"
-                 "Read a weighted planar graph with a rotation system; see README.md.\n"
-                 "--tclp DIR     solve a traffic counting location instance (DIR holds\n"
-                 "               edges.txt and od_nodes.txt); the planarity of the\n"
-                 "               network is tested before the cut is computed\n"
-                 "--planarity-only  only test and report planarity in TCLP mode\n"
-                 "--klein-marx-only  disable the exact primal DP fast path\n"
-                 "--crossings N  cap on interior crossings per terminal (default 32;\n"
-                 "               the paper proves 24 suffices for optimality)");
-            return 0;
-        }
-        if (strcmp(argv[i], "--crossings") == 0) {
-            paper_only = true;
-            if (++i == argc) die("--crossings needs a value");
-            char *end;
-            long v = strtol(argv[i], &end, 10);
-            if (*end || v < 1 || v > 1000) die("--crossings must be in 1..1000");
-            g_crossings = (int)v;
-            continue;
-        }
-        if (strcmp(argv[i], "--klein-marx-only") == 0) {
-            paper_only = true;
-            continue;
-        }
-        if (strcmp(argv[i], "--planarity-only") == 0) {
-            only_planarity = true;
-            continue;
-        }
-        if (strcmp(argv[i], "--tclp") == 0) {
-            if (++i == argc) die("--tclp needs a directory");
-            dir = argv[i];
-            continue;
-        }
-        if (strcmp(argv[i], "--edges") == 0) {
-            if (++i == argc) die("--edges needs a file");
-            edges = argv[i];
-            continue;
-        }
-        if (strcmp(argv[i], "--od") == 0) {
-            if (++i == argc) die("--od needs a file");
-            ods = argv[i];
-            continue;
-        }
-        if (path) die("usage: planar-cut [--crossings N] [FILE|-]");
-        path = argv[i];
-    }
-    if ((dir && (edges || ods)) || (!dir && (!!edges != !!ods)))
-        die("use either --tclp DIR or --edges EDGES --od OD_NODES");
-    if (only_planarity && !dir && !edges)
-        die("--planarity-only requires TCLP input");
-    if (dir || edges) {
-        if (path) die("no input file with --tclp or --edges");
-        Inst ins = tclp_read(dir, edges, ods);
-        fprintf(stderr, "instance: %d nodes, %d edges, %d terminals\n",
-                ins.g.n, ins.g.m, ins.k);
-        /* Planarity first: the algorithm needs a planar embedding. */
-        Planarity verdict = embed(&ins.g);
-        if (verdict != PLANAR) {
-            puts(verdict == NONPLANAR ? "planar no" : "planar unknown");
-            if (verdict == PLANARITY_UNKNOWN)
-                fputs("planar-cut: planarity search budget exhausted\n", stderr);
-            tclp_free(&ins);
-            return EXIT_FAILURE;
-        }
-        puts("planar yes");
-        fflush(stdout);
-        if (only_planarity) { tclp_free(&ins); return 0; }
-        Answer result = components(&ins.g, ins.term, ins.k, paper_only);
-        verify(&ins.g, ins.term, ins.k, &result);
-        int count = 0;
-        for (int e = 0; e < ins.g.m; ++e) count += result.cut[e];
-        printf("cost %" PRIu64 "\ncut %d\n", result.cost, count);
-        for (int e = 0; e < ins.g.m; ++e) if (result.cut[e]) printf("%s\n", ins.edge_id[e]);
-        free(result.cut);
-        tclp_free(&ins);
-        return 0;
-    }
-    FILE *in = stdin;
-    if (path && strcmp(path, "-") != 0) {
-        in = fopen(path, "r");
-        if (!in) { perror(path); return EXIT_FAILURE; }
-    }
-    int *term, k;
-    Plane g = load(in, &term, &k);
-    if (in != stdin) fclose(in);
-    Answer result = components(&g, term, k, paper_only);
-    verify(&g, term, k, &result);
+    if (mkdir(options->solution_dir, 0777) != 0 && errno != EEXIST)
+        die("cannot create the solution directory");
+    size_t size = strlen(options->solution_dir) + strlen(options->instance_name) + 48;
+    char *path = mem(size, 1);
+    snprintf(path, size, "%s/%s_planar_seed%" PRIu64 ".txt", options->solution_dir,
+             options->instance_name, seed);
+    FILE *file = fopen(path, "w");
+    if (!file) die("cannot write the solution file");
     int count = 0;
-    for (int e = 0; e < g.m; ++e) count += result.cut[e];
-    printf("cost %" PRIu64 "\ncut %d\n", result.cost, count);
-    for (int e = 0; e < g.m; ++e) if (result.cut[e]) printf("%d\n", e+1);
-    free(result.cut); free(term); plane_free(&g);
-    return 0;
+    for (int e = 0; e < ins->g.m; ++e) count += a->cut[e];
+    fprintf(file, "# location_pca %s solution\n", LOCATION_PCA_VERSION);
+    fprintf(file, "# instance: %s\n# algorithm: planar\n# seed: %" PRIu64 "\n",
+            options->instance_name, seed);
+    fprintf(file, "# counting stations: %d\n# feasible: yes\n# lower bound: %" PRIu64 "\n",
+            count, a->cost);
+    fputs("# One edge identifier (first column of the edge file) per line.\n", file);
+    for (int e = 0; e < ins->g.m; ++e)
+        if (a->cut[e]) fprintf(file, "%s\n", ins->edge_id[e]);
+    if (fclose(file) != 0) die("error while writing the solution file");
+    free(path);
+}
+
+int planar_run_all(const Options *options)
+{
+    bool weighted = options->od_path == NULL;
+    if (!weighted && options->print_header && !options->planarity_only) {
+        report_table_header(stdout);
+    }
+    for (int32_t run = 0; run < options->runs; ++run) {
+        uint64_t seed = options->seed + (uint64_t)run;
+        if (!weighted) {
+            Inst ins = tclp_read(NULL, options->edges_path, options->od_path);
+            log_message(LOG_INFO, "instance %s: %d nodes, %d edges, %d O-D nodes",
+                        options->instance_name, ins.g.n, ins.g.m, ins.k);
+            /* The verdict belongs to the logs: stdout keeps the TSV contract. */
+            Planarity verdict = embed(&ins.g);
+            if (verdict != PLANAR) {
+                fputs(verdict == NONPLANAR ? "planar no\n" : "planar unknown\n", stderr);
+                if (verdict == PLANARITY_UNKNOWN)
+                    fputs("location_pca: planarity search budget exhausted\n", stderr);
+                tclp_free(&ins);
+                return EXIT_FAILURE;
+            }
+            fputs("planar yes\n", stderr);
+            if (options->planarity_only) { tclp_free(&ins); continue; }
+            double begin = timer_now();
+            Answer result = components(&ins.g, ins.term, ins.k, options->planar_paper_only);
+            verify(&ins.g, ins.term, ins.k, &result);
+            double elapsed = timer_now() - begin;
+            if (result.cost > INT32_MAX) die("cut cost exceeds the table format");
+            /* A minimum cut in a planar graph: the bound is the cost itself. */
+            RunResult rr = {
+                .cost = (int32_t)result.cost,
+                .connected_pairs = 0,
+                .lower_bound = (double)result.cost,
+                .num_paths = 0,
+                .iterations = 1,
+                .exact_solves = 0,
+                .time_total = elapsed,
+            };
+            report_table_row(stdout, options, run, seed, &rr);
+            log_message(LOG_INFO, "run %d (seed %" PRIu64 "): %" PRIu64 " counting stations, %.2fs",
+                        run, seed, result.cost, elapsed);
+            if (options->solution_dir) write_solution(options, seed, &ins, &result);
+            free(result.cut);
+            tclp_free(&ins);
+        } else {
+            FILE *in = stdin;
+            if (strcmp(options->edges_path, "-") != 0) {
+                in = fopen(options->edges_path, "r");
+                if (!in) die("cannot open the input file");
+            }
+            int *term, k;
+            Plane g = load(in, &term, &k);
+            if (in != stdin) fclose(in);
+            Answer result = components(&g, term, k, options->planar_paper_only);
+            verify(&g, term, k, &result);
+            int count = 0;
+            for (int e = 0; e < g.m; ++e) count += result.cut[e];
+            printf("cost %" PRIu64 "\ncut %d\n", result.cost, count);
+            for (int e = 0; e < g.m; ++e)
+                if (result.cut[e]) printf("%d\n", e + 1);
+            fflush(stdout);
+            free(result.cut); free(term); plane_free(&g);
+        }
+    }
+    return EXIT_SUCCESS;
 }
